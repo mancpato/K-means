@@ -16,41 +16,49 @@
     UABCS/DSC, IA II
 */
 
-int k = 3;                // Centroides, de 3 a 4
-int nPuntos = 400;        // Puntos distribuidos en todo el espacio
-int nAgrupados = 120;     // Puntos agrupados por clase
+int k = 3;               // Centroides, de 3 a 4
+int nPuntos = 300;        // Puntos distribuidos en todo el espacio
+int nAgrupados = 100;     // Puntos agrupados por clase
 int Densidad = 10;        // Concentración de los grupos
+int Espera = 0;
+boolean AvanzarConClick = false;
 
-int Radio = 10;
+int Radio = 8;
 color ColorFondo = 100;
 color ColorPuntoNormal = 200;
 color[] ColorClase = {#FF0000, #00FF00, #0000FF, #F0F0F0, #FF00FF};
 
 ArrayList<Punto> Puntos = new ArrayList();
-ArrayList<Punto> Clases = new ArrayList();
+ArrayList<Clase> Clases = new ArrayList();
+
+boolean Cambio;
+int Iteraciones;
+float DsvStPuntos, Varianza;
 
 void setup()
 {
     size(800,600);
-    
+    Cambio = true;
+    Iteraciones=0;
+
+    // Los k centroides se generan aleatoriamente
+    for ( int i=0 ; i<k ; i++ ) {
+        Clase C = new Clase(random(2*Radio, width-2*Radio),
+                            random(2*Radio, height-2*Radio), 
+                            ColorClase[i], i);
+        Clases.add(C);
+    }
+
     // nPuntos distribuidos en toda la ventana
     for ( int i=0 ; i<nPuntos ; i++ ) {
         Punto p = new Punto(random(Radio, width-Radio),
                             random(Radio, height-Radio));
         Puntos.add(p);
     }
-    
-    // Las clases se forman con los puntos iniciales
-    for ( int i=0 ; i<k ; i++ ) {
-        int r = int(random(Puntos.size()));
-        Punto p = Puntos.get(r);
-        p.Color = ColorClase[i];
-        Clases.add(p);  // Debiera revisarse que no se repitan
-    }
-    
+
+    // Puntos adicionales agrupados
     float Hor = width/Densidad;
     float Ver = height/Densidad;
-    // Puntos adicionales agrupados
     for ( int i=0 ; i<nAgrupados ; i++ ) {
         Punto p = new Punto(width/3+random(-Hor, Hor), 
                             height/3+random(-Ver, Ver));
@@ -62,9 +70,9 @@ void setup()
         Puntos.add(p);
     }
     for ( int i=0 ; i<nAgrupados ; i++ ) {
-        Punto p = new Punto(width/2+random(-Hor, Hor), 
+        //Punto p = new Punto(width/2+random(-Hor, Hor), 
         // Esta línea hace fallar el algoritmo en ocasiones
-        //Punto p = new Punto(2*width/3+random(-Hor, Hor), 
+        Punto p = new Punto(2*width/3+random(-Hor, Hor), 
                             2*height/3+random(-Ver, Ver));
         Puntos.add(p);
     }
@@ -74,6 +82,8 @@ void setup()
     //    Puntos.add(p);
     //}
     Ayuda();
+    for (Clase C : Clases )
+        println(C.Centro.x,C.Centro.y);
 }
 
 void draw()
@@ -83,28 +93,43 @@ void draw()
     noStroke();
     for (Punto p : Puntos) 
         p.Dibujar(Radio);
-    for (Punto p : Clases ) 
-        p.Dibujar(2*Radio);
-    
-    Iterar_k_means();
+    for (Clase C : Clases )
+        C.Dibujar(2*Radio);
+
+    if ( frameCount>1 ) {
+        Iterar_k_means();
+        Iteraciones++;
+    }
 
     //saveFrame("line-##.png");
-    noLoop();
-    //delay(500);
+    if ( Cambio == false ) {
+        println("\nCentroides estables en "+str(Iteraciones)+" iteraciones");
+        println("Clase\tPuntos\tVarianza");
+        for (Clase C : Clases ) {
+            C.CalcularDispersion();
+            C.MostrarDispersion();
+            print(" "+str(C.k)+ "\t"+str(C.Card)+
+                                  "\t"+str(int(C.Varianza)));
+            println("\t("+str(int(C.Centro.x))+","+str(int(C.Centro.y))+")");
+        }
+        noLoop();
+    }
+    if ( AvanzarConClick == true )
+        noLoop();
+    delay(Espera);
 }
 
 void Iterar_k_means()
 {
     // Asignar puntos al centroide más cercano
     for (Punto p : Puntos) {
-        float D = width;
-        if ( Clases.contains(p) )
-            continue;
-        for (Punto q : Clases ) { 
-            float d = dist(p.x, p.y, q.x, q.y);
+        float D = 2*width;
+        for (Clase C : Clases ) { 
+            float d = dist(p.x, p.y, C.Centro.x, C.Centro.y);
             if ( d < D ) {
                 D = d;
-                p.Color = q.Color;
+                p.Color = C.Color;
+                p.k = C.k;
             }
         }
     }
@@ -112,18 +137,27 @@ void Iterar_k_means()
     //  - Actualizar centroides por clase
     float SumaX, SumaY;
     int n;
-    for (Punto q : Clases ) {
-        n = 0; //<>//
+    int ClasesEstables = 0;
+    for (Clase C : Clases ) {
+        int xAnt = int(C.Centro.x);
+        int yAnt = int(C.Centro.y);
+        int x,y;
+        n = 0;
         SumaX = SumaY = 0;
         for (Punto p : Puntos)
-            if ( p.Color == q.Color ) {
+            if ( p.Color == C.Color ) {
                 SumaX += p.x;
                 SumaY += p.y;
                 n++;
             }
-        q.x = int(SumaX/n);
-        q.y = int(SumaY/n);
+        C.Centro.x = int(SumaX/n);
+        C.Centro.y = int(SumaY/n);
+        C.Card = n;
+        if ( xAnt == int(SumaX/n)  &&  yAnt == int(SumaY/n) ) //<>//
+            ClasesEstables++;
     }
+    if ( ClasesEstables == k )
+        Cambio = false;
 }
 
 void mouseClicked()
@@ -138,11 +172,16 @@ void keyPressed()
     for (Punto p : Puntos) 
         p.Color = ColorPuntoNormal;
     int i = 0;
-    for (Punto C : Clases ) {
-        C.x = random(width);
-        C.y = random(height);
+    for (Clase C : Clases ) {
+        C.Centro.x = random(2*Radio, width-2*Radio);
+        C.Centro.y = random(2*Radio, height-2*Radio);
+        print("\n("+str(int(C.Centro.x))+","+str(int(C.Centro.y))+")");
         C.Color = ColorClase[i++];
+        C.DesvStdX = C.DesvStdY = -1;
     }
+    Cambio = true;
+    frameCount=1;
+    Iteraciones = 0;
     loop();
 }
 
